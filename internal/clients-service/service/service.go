@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
+	"sort"
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
@@ -11,8 +13,7 @@ import (
 	"github.com/pedidopago/trainingsvc-clients/protos/pb"
 	"github.com/pedidopago/trainingsvc-clients/utils"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type Config struct {
@@ -58,23 +59,33 @@ func (s *Service) NewClient(ctx context.Context, req *pb.NewClientRequest) (*pb.
 	vals := make([]interface{}, 0)
 
 	cols, vals = append(cols, "id"), append(vals, id)
+	
 	//FIXME: adicionar name
+	cols, vals = append(cols, "name"), append(vals, req.Name)
+	
 	if req.Birthday != 0 {
 		cols, vals = append(cols, "birthday"), append(vals, time.Unix(0, req.Birthday))
 	}
+	
 	//FIXME: adicionar score
+	if req.Score >= 0 {
+		cols, vals = append(cols, "score"), append(vals, req.Score)
+	}
 
 	q, args, err := sq.Insert("clients").Columns(cols...).Values(vals...).ToSql()
 	if err != nil {
 		return nil, err
 	}
+	
 	//FIXME: executar query com s.db.ExecCtx...
-	_, _ = q, args
-	return nil, status.Error(codes.Unimplemented, "FIXME: query insert")
-
-	// return &pb.NewClientResponse{
-	// 	Id: id,
-	// }, nil
+	_, err2 := s.db.ExecContext(ctx, q, args...);
+	if err2 != nil {
+		return nil, err
+	}
+	
+	return &pb.NewClientResponse{
+	 	Id: id,
+	 }, nil
 }
 
 func (s *Service) QueryClients(ctx context.Context, req *pb.QueryClientsRequest) (*pb.QueryClientsResponse, error) {
@@ -86,20 +97,27 @@ func (s *Service) QueryClients(ctx context.Context, req *pb.QueryClientsRequest)
 		rq = rq.Where("name LIKE ?", req.Name.Value)
 	}
 	if req.Birthday != nil {
-		rq = req.Birthday.Where("birthday", rq)
+		rq = rq.Where("birthday", req.Birthday)
 	}
 	if req.Score != nil {
-		rq = req.Score.Where("score", rq)
+		rq = rq.Where("score", req.Score)
 	}
 
 	//FIXME: adicionar created_at
+	if req.CreatedAt != nil {
+		rq = rq.Where("created_at", req.CreatedAt)
+	}
 
 	//FIXME: ordenar por score! (DESC)
+	rq = rq.OrderBy("score DESC");
 
 	q, args, err := rq.ToSql()
 	if err != nil {
 		return nil, err
 	}
+
+	log.Println(q);
+
 	ids := make([]string, 0)
 	if err := s.db.SelectContext(ctx, &ids, q, args...); err != nil {
 		return nil, err
@@ -139,7 +157,7 @@ func (s *Service) GetClients(ctx context.Context, req *pb.GetClientsRequest) (*p
 			Name:     v.Name,
 			Birthday: v.Birthday.Time.UnixNano(),
 			Score:    v.Score.Int64,
-			//FIXME: adicionar created_at
+			CreatedAt: &timestamppb.Timestamp{},
 		})
 	}
 	return resp, nil
@@ -152,19 +170,36 @@ func (s *Service) NewMatch(ctx context.Context, req *pb.NewMatchRequest) (*pb.Ne
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Commit()
-	if _, err := tx.Exec("INSERT INTO client_matches (client_id, score) VALUES (?, ?)", req.ClientId, req.Score); err != nil {
+	resp, err := tx.Exec("INSERT INTO client_matches (client_id, score) VALUES (?, ?)", req.ClientId, req.Score); 
+	if err != nil {
 		_ = tx.Rollback()
 		return nil, err
 	}
+
+	returnedId, err := resp.LastInsertId();
+	if err != nil {
+		return nil, err
+	}
+
 	//FIXME: tx -> UPDATE clients SET score = score + ? WHERE id = ?
-	tx.Rollback()                                                                  //TODO: remover esta linha
-	return nil, status.Error(codes.Unimplemented, "FIXME: implementar NewMatch()") //TODO: trocar linha por implementação
+	if _, err := tx.Exec("UPDATE clients SET score = score + ? WHERE id = ?", req.Score, req.ClientId); err != nil {
+		_ = tx.Rollback()
+		return nil, err
+	}
+	
+	tx.Commit()	
+	
+	//TODO: remover esta linha
+	return &pb.NewMatchResponse{ Id: returnedId}, nil; //TODO: trocar linha por implementação
 }
 
 func (s *Service) DeleteClient(ctx context.Context, req *pb.DeleteClientRequest) (*pb.DeleteClientResponse, error) {
 	//FIXME: implementar DeleteClient()
-	return nil, status.Error(codes.Unimplemented, "FIXME: implementar DeleteClient()")
+	if _, err := s.db.Exec("DELETE FROM clients WHERE id = ?", req.Id); err != nil {
+		return nil, err
+	}
+	return &pb.DeleteClientResponse{}, nil
+	
 }
 
 func (s *Service) DeleteAllClients(ctx context.Context, req *pb.DeleteAllClientsRequest) (*pb.DeleteAllClientsResponse, error) {
@@ -174,4 +209,31 @@ func (s *Service) DeleteAllClients(ctx context.Context, req *pb.DeleteAllClients
 	return &pb.DeleteAllClientsResponse{}, nil
 }
 
+//Limpar itens duplicados
+func removeDuplicateValues(intSlice []string) []string {
+	keys := make(map[string]bool)
+	list := []string{}
+
+	
+	for _, entry := range intSlice {
+		 if _, value := keys[entry]; !value {
+			  keys[entry] = true
+			  list = append(list, entry)
+		 }
+	}
+	return list
+}
+
 //FIXME: implementar Sort()
+func (s *Service) Sort(ctx context.Context, req *pb.SortRequest) (*pb.SortResponse, error) {
+	
+	sortMtx := req.Items;
+
+	sort.Strings(sortMtx);
+
+	if (req.RemoveDuplicates) {
+		sortMtx = removeDuplicateValues(sortMtx);
+	}
+
+	return &pb.SortResponse{ Items: sortMtx}, nil
+}

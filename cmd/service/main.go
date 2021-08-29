@@ -27,7 +27,7 @@ func main() {
 		&cli.StringFlag{
 			Name:    "dbcs",
 			EnvVars: []string{"DBCS"},
-			Usage:   "mariadb connection string: user:password@tcp(host:port)/ms_training?parseTime=true",
+			Usage:   "mysql connection string: root:#Ad20p7s@tcp(localhost:3306)/ms_training?parseTime=true",
 		},
 	}
 
@@ -40,7 +40,7 @@ func main() {
 
 func run(c *cli.Context) error {
 
-	lis, err := net.Listen("tcp", c.String("addr"))
+	lis, err := net.Listen("tcp4", c.String("addr"))
 	if err != nil {
 		log.Error().Err(err).Str("addr", c.String("addr")).Caller().Msg("listener error")
 		return err
@@ -75,10 +75,13 @@ func run(c *cli.Context) error {
 	//FIXME: fazer com que o programa só finalize ao receber um sinal os.INTERRUPT (ou +) com o channel "ch" (tip: Notify)
 	ch := make(chan os.Signal, 1)
 	// signal...
-	panic("fazer com que o programa só finalize ao receber um sinal os.INTERRUPT")
-	<-ch
+	//panic("fazer com que o programa só finalize ao receber um sinal os.INTERRUPT")
+	v:=<-ch
 
-	grpcServer.GracefulStop()
-	log.Warn().Msg("shutting down")
+	if (v == os.Interrupt) {
+		grpcServer.GracefulStop()
+		log.Warn().Msg("shutting down")
+	}
+	
 	return nil
 }

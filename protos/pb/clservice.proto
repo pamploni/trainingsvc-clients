@@ -2,9 +2,11 @@ syntax = "proto3";
 
 package pb;
 
+import "google/protobuf/timestamp.proto";
+
 option go_package = "github.com/pedidopago/trainingsvc-clients/protos/pb";
 
-import "cltypes.proto";
+import "protos/pb/cltypes.proto";
 
 service ClientsService {
   rpc NewClient(NewClientRequest) returns (NewClientResponse) {}
@@ -31,6 +33,7 @@ message QueryClientsRequest {
   Int64Comp birthday = 3;
   Int64Comp score = 4;
   // FIXME: adicionar created_at
+  google.protobuf.Timestamp created_at = 5;
 }
 
 message QueryClientsResponse { repeated string ids = 1; }

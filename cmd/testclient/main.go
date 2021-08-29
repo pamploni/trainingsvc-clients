@@ -17,12 +17,12 @@ func main() {
 		&cli.StringFlag{
 			Name:    "server",
 			EnvVars: []string{"SERVER"},
-			Value:   "127.0.0.1:6000",
+			Value:   "localhost:6000",
 		},
 	}
 
 	app.Action = func(c *cli.Context) error {
-		conn, err := grpc.Dial(c.String("server"), grpc.WithInsecure())
+		conn, err := grpc.Dial("localhost:6000", grpc.WithInsecure())
 		if err != nil {
 			return cli.NewExitError(err.Error(), 2)
 		}
