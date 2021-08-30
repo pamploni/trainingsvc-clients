@@ -39,5 +39,14 @@ func TestNewClient(t *testing.T) {
 
 func TestGetClients(t *testing.T) {
 	//FIXME: escrever teste
-	t.Fail()
+	service, mock := newTestService(t)
+
+	mock.ExpectExec("select clients.* from clients").WillReturnResult(sqlmock.NewResult(0, 1))
+	resp, err := service.GetClients(context.Background(), &pb.GetClientsRequest{
+		Ids:     []string{"AAAAAAAAAAAAAAAAAAAAAAAAAA", "BBBBBBBBBBBBBBBBBBBBBBBBBB"},		
+	})
+	assert.Nil(t, resp)
+	assert.NoError(t, err)
+	
+	
 }
